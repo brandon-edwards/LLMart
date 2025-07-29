@@ -5,6 +5,7 @@
 #
 
 import argparse
+import numpy as np
 
 import torch
 from tqdm import trange
@@ -44,7 +45,7 @@ def main(
     print(
         f"\nTrying to generate '{sequence}' of len={len(sequence)} | with: num_tokens({num_tokens})"
     )
-    found, (adv_prefix, gen_completion) = attack(
+    found, (adv_prefix, gen_completion) = train_defense(
         sequence=sequence,
         generator=generator,
         num_tokens=num_tokens,
@@ -62,13 +63,25 @@ def main(
 def train_defense(
     sequence: str,
     *,
+    data_queries: list,
+    data_responses: list,
     generator: Pipeline,
     num_tokens: int,
     max_steps: int,
     lr: float,
     use_hard_tokens: bool,
-    seed: int = 2024,
+    seed: int = 2024, 
+    batch_size: int = 20,
 ) -> tuple[bool, tuple[str, str]]:
+    """
+    sequence: string to make sure is not at the beginning of the response (~ startswith)
+    data: list of string queries
+    
+    """
+
+    # input validation
+    assert len(data_queries) == len(data_responses), "Queries and responses must have the same length"
+
     torch.manual_seed(seed)
     adv_generator = pipeline(
         task="adv-text-generation",
@@ -94,38 +107,68 @@ def train_defense(
     else:
         optim = Adam(adv_generator.attack.parameters(), lr=lr)
 
+    """
+    This block is being replaced now that we are using prompts and responses
     prompt = ""
     adv_prompt = prompt
     adv_completion = ""
     found = False
+    """
 
-    for _ in (pbar := trange(max_steps)):
-        with torch.inference_mode():
-            found = (not adv_completion.startswith(sequence))
-            if found:
-                break
+    num_batches = int(np.floor(len(data_queries) / batch_size))
+    adv_completion = sequence
 
-        def closure(return_outputs=False):
-            outputs: MutableMapping = adv_generator(prompt, completion=sequence)[0]  # type: ignore
-            return outputs if return_outputs else outputs["loss"]
+    def closure(prompt, completion, return_outputs=False):
+        outputs: list[MutableMapping] = adv_generator(text_inputs=prompt, completion=completion)
+        raise ValueError(f"Brandon DEBUG: length of outputs['generated_text'] of closure is: {len(outputs['generated_text'])} which I'm thinking should match the batch size: {batch_size}")
+        # inserted negative below dissincentivise the sequence appearing at the start
+        total_loss = -outputs[0]["loss"]
+        for idx in range(1, len(outputs)):
+            total_loss += -outputs[idx]["loss"]
+        mean_loss = total_loss / len(outputs)
+        return outputs if return_outputs else mean_loss
 
-        # Check if we found an attack that works
-        adv_outputs: MutableMapping = closure(return_outputs=True)
-        adv_prompt = adv_outputs["prompt_text"]
-        adv_completion = adv_outputs["generated_text"]
-        loss = adv_outputs["loss"]
+    all_num_found = {}
 
-        loss.backward()
-        with torch.inference_mode():
-            if use_hard_tokens:
-                optim.step(closure)  # type: ignore
-            else:
-                optim.step()  # type: ignore
+    for step_num in (pbar := trange(max_steps)):
+        """
+        For each step we itate over all batches to improve tokens, then run with these fixed tokens 
+        to get a train set evaluation by iterating again over all batches.
+        """
+        # First the epoch to improve tokens
+        # TODO: Should I really remove partial batches like I am? Currently it is to have the same length of responses
+        print(f"\n####\nSTARTING step number: {step_num}\n####\n")
+        num_found_this_step = 0
+            
+        for batch_idx in range(num_batches):
+            batch_queries = data_queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+            batch_responses = data_responses[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+            with torch.inference_mode():
+                num_found = np.sum([not completion.startswith(sequence) for completion in adv_completion])
+                num_found_this_step += num_found
 
-        pbar.set_postfix(loss=f"{loss:0.4f}")
+            # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
+            adv_outputs: MutableMapping = closure(prompt=batch_queries, completion=sequence, return_outputs=True)
+            adv_prompt = adv_outputs["prompt_text"]
+            adv_completion = adv_outputs["generated_text"]
+            loss = adv_outputs["loss"]
+
+            loss.backward()
+            with torch.inference_mode():
+                if use_hard_tokens:
+                    optim.step(closure)  # type: ignore
+                else:
+                    optim.step()  # type: ignore
+
+            pbar.set_postfix(loss=f"{loss:0.4f}")
+        all_num_found[step_num] = num_found_this_step
+        print(f"\n\n\n####\nEND OF step number: {step_num} | num_found_this_step: {num_found_this_step}\n####\n\n\n")
+
+    
 
     # Compute adversarial soft token embeddings
-    model_inputs = adv_generator.preprocess(prompt, completion="")  # type: ignore
+    # TODO: Just trying something here, not sure if this is what we want (ask Sebastian)
+    model_inputs = adv_generator.preprocess("", completion="")  # type: ignore
     model_inputs = adv_generator.ensure_tensor_on_device(**model_inputs)
     adv_model_inputs = adv_generator.attack(model_inputs)  # type: ignore
 
@@ -142,7 +185,7 @@ def train_defense(
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
 
-    return found, (adv_prompt, decoded)  # type: ignore
+    return all_num_found, (adv_prompt, decoded)  # type: ignore
 
 
 if __name__ == "__main__":
