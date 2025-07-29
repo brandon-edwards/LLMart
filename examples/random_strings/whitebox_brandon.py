@@ -115,54 +115,34 @@ def train_defense(
     found = False
     """
 
-    num_batches = int(np.floor(len(data_queries) / batch_size))
-    adv_completion = sequence
-
     def closure(prompt, completion, return_outputs=False):
-        outputs: list[MutableMapping] = adv_generator(text_inputs=prompt, completion=completion)
-        raise ValueError(f"Brandon DEBUG: length of outputs['generated_text'] of closure is: {len(outputs['generated_text'])} which I'm thinking should match the batch size: {batch_size}")
-        # inserted negative below dissincentivise the sequence appearing at the start
-        total_loss = -outputs[0]["loss"]
-        for idx in range(1, len(outputs)):
-            total_loss += -outputs[idx]["loss"]
-        mean_loss = total_loss / len(outputs)
-        return outputs if return_outputs else mean_loss
-
-    all_num_found = {}
+        outputs: MutableMapping = adv_generator(prompt, completion=completion)[0]  # type: ignore
+        return outputs if return_outputs else outputs["loss"]
 
     for step_num in (pbar := trange(max_steps)):
         """
-        For each step we itate over all batches to improve tokens, then run with these fixed tokens 
-        to get a train set evaluation by iterating again over all batches.
+        For each step we itate over all samples to improve tokens with the objective of answering ground truth.
         """
-        # First the epoch to improve tokens
-        # TODO: Should I really remove partial batches like I am? Currently it is to have the same length of responses
         print(f"\n####\nSTARTING step number: {step_num}\n####\n")
-        num_found_this_step = 0
+        with torch.inference_mode():
             
-        for batch_idx in range(num_batches):
-            batch_queries = data_queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
-            batch_responses = data_responses[batch_idx * batch_size : (batch_idx + 1) * batch_size]
-            with torch.inference_mode():
-                num_found = np.sum([not completion.startswith(sequence) for completion in adv_completion])
-                num_found_this_step += num_found
+            for query, response in zip(data_queries, data_responses):
+                
+                adv_outputs: MutableMapping = closure(prompt=query, completion=response, return_outputs=True)
+                adv_prompt = adv_outputs["prompt_text"]
+                # don't need since we are not inspecting model outputs to see if we found good tokens adv_completion = adv_outputs["generated_text"]
+                loss = adv_outputs["loss"]
 
-            # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
-            adv_outputs: MutableMapping = closure(prompt=batch_queries, completion=sequence, return_outputs=True)
-            adv_prompt = adv_outputs["prompt_text"]
-            adv_completion = adv_outputs["generated_text"]
-            loss = adv_outputs["loss"]
+                loss.backward()
+                with torch.inference_mode():
+                    if use_hard_tokens:
+                        optim.step(closure)  # type: ignore
+                    else:
+                        optim.step()  # type: ignore
 
-            loss.backward()
-            with torch.inference_mode():
-                if use_hard_tokens:
-                    optim.step(closure)  # type: ignore
-                else:
-                    optim.step()  # type: ignore
+                pbar.set_postfix(loss=f"{loss:0.4f}")
 
-            pbar.set_postfix(loss=f"{loss:0.4f}")
-        all_num_found[step_num] = num_found_this_step
-        print(f"\n\n\n####\nEND OF step number: {step_num} | num_found_this_step: {num_found_this_step}\n####\n\n\n")
+                print(f"\n\n\n####\nEND OF step number: {step_num} | loss: {loss}\n####\n\n\n")
 
     
 
@@ -185,7 +165,7 @@ def train_defense(
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
 
-    return all_num_found, (adv_prompt, decoded)  # type: ignore
+    return decoded  # type: ignore
 
 
 if __name__ == "__main__":
