@@ -43,9 +43,9 @@ def main(
     generator.tokenizer.pad_token = generator.tokenizer.eos_token
 
     print(
-        f"\nTrying to generate '{sequence}' of len={len(sequence)} | with: num_tokens({num_tokens})"
+        f"\nTrying to AVOID generating something starting with '{sequence}' of len={len(sequence)} | with: num_tokens({num_tokens})"
     )
-    found, (adv_prefix, gen_completion) = train_defense(
+    final_found, (adv_prefix, gen_completion) = train_defense(
         sequence=sequence,
         generator=generator,
         num_tokens=num_tokens,
@@ -53,11 +53,7 @@ def main(
         lr=lr,
         use_hard_tokens=use_hard_tokens,
     )
-    print(f"Final prompt: {repr(adv_prefix)} => {repr(gen_completion)}")
-    if found:
-        print("Found effective prompt")
-    else:
-        print("Failed to find effective prompt")
+    
 
 
 def train_defense(
@@ -111,22 +107,21 @@ def train_defense(
     This block is being replaced now that we are using prompts and responses
     prompt = ""
     adv_prompt = prompt
-    adv_completion = ""
+    adv_completion = []""
     found = False
     """
+    adv_completions = batch_size * [""]
 
     num_batches = int(np.floor(len(data_queries) / batch_size))
-    adv_completion = sequence
 
-    def closure(prompt, completion, return_outputs=False):
-        outputs: list[MutableMapping] = adv_generator(text_inputs=prompt, completion=completion)
-        raise ValueError(f"Brandon DEBUG: length of outputs['generated_text'] of closure is: {len(outputs['generated_text'])} which I'm thinking should match the batch size: {batch_size}")
-        # inserted negative below dissincentivise the sequence appearing at the start
-        total_loss = -outputs[0]["loss"]
+    def closure(prompt_batch, completion_batch):
+        outputs: list[MutableMapping] = [adv_generator(prompt, completion=completion)[0] for prompt, completion in zip(prompt_batch, completion_batch)]
+        # raise ValueError(f"Brandon DEBUG: length of outputs['generated_text'] of closure is: {len(outputs['generated_text'])} which I'm thinking should match the batch size: {batch_size}")
+        total_loss = outputs[0]["loss"]
         for idx in range(1, len(outputs)):
-            total_loss += -outputs[idx]["loss"]
+            total_loss += outputs[idx]["loss"]
         mean_loss = total_loss / len(outputs)
-        return outputs if return_outputs else mean_loss
+        return outputs, mean_loss
 
     all_num_found = {}
 
@@ -144,23 +139,25 @@ def train_defense(
             batch_queries = data_queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
             batch_responses = data_responses[batch_idx * batch_size : (batch_idx + 1) * batch_size]
             with torch.inference_mode():
-                num_found = np.sum([not completion.startswith(sequence) for completion in adv_completion])
+                num_found = np.sum([not adv_completion.startswith(sequence) for adv_completion in adv_completions])
                 num_found_this_step += num_found
 
             # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
-            adv_outputs: MutableMapping = closure(prompt=batch_queries, completion=sequence, return_outputs=True)
-            adv_prompt = adv_outputs["prompt_text"]
-            adv_completion = adv_outputs["generated_text"]
-            loss = adv_outputs["loss"]
+            adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses)
 
-            loss.backward()
+            # Sebastian to advise here, need to somehow use cloned tensors here
+            adv_prompts = [adv_output["prompt_text"] for adv_output in adv_outputs]
+            adv_completions = [adv_output["generated_text"] for adv_output in adv_outputs]
+
+            mean_loss.backward()
             with torch.inference_mode():
                 if use_hard_tokens:
+                    raise NotImplementedError("Hard tokens not implemented with this closure (returns a tuple)")
                     optim.step(closure)  # type: ignore
                 else:
                     optim.step()  # type: ignore
 
-            pbar.set_postfix(loss=f"{loss:0.4f}")
+            pbar.set_postfix(loss=f"{mean_loss:0.4f}")
         all_num_found[step_num] = num_found_this_step
         print(f"\n\n\n####\nEND OF step number: {step_num} | num_found_this_step: {num_found_this_step}\n####\n\n\n")
 
@@ -175,7 +172,8 @@ def train_defense(
     # Pass text or soft token embeddings to generator
     with torch.inference_mode():
         if use_hard_tokens:
-            output: MutableMapping = generator(adv_prompt)[0]  # type: ignore
+            # TODO: Again, this will only make sense if we are using cloned tensors so that actually there is only one adv_prompt
+            output: MutableMapping = generator(adv_prompts[0])  # type: ignore
             decoded = output["generated_text"]
         else:
             output_ids = generator.model.generate(  # type: ignore[reportCallIssue]
@@ -185,7 +183,7 @@ def train_defense(
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
 
-    return all_num_found, (adv_prompt, decoded)  # type: ignore
+    return all_num_found, (adv_prompts[0], decoded)  # type: ignore
 
 
 if __name__ == "__main__":
