@@ -116,11 +116,16 @@ def train_defense(
 
     def closure(prompt_batch, completion_batch):
         outputs: list[MutableMapping] = [adv_generator(prompt, completion=completion)[0] for prompt, completion in zip(prompt_batch, completion_batch)]
-        # raise ValueError(f"Brandon DEBUG: length of outputs['generated_text'] of closure is: {len(outputs['generated_text'])} which I'm thinking should match the batch size: {batch_size}")
         total_loss = outputs[0]["loss"]
         for idx in range(1, len(outputs)):
             total_loss += outputs[idx]["loss"]
         mean_loss = total_loss / len(outputs)
+        # here testing whether the adversarial inputs were the same
+        print(f"output keys: {outputs[0].keys()}")
+        # print(f"\n#####\ntokens used were: \n{[output['prompt_text'] for output in outputs]} \n####")
+        # Looking to see whether the attack parameters are changing
+        # print(f"\n#####\nshape and values of attack parameters: {[(thingy.shape, thingy) for thingy in adv_generator.attack.parameters()]} \n#####\n")
+
         return outputs, mean_loss
 
     all_num_found = {}
@@ -131,7 +136,7 @@ def train_defense(
         to get a train set evaluation by iterating again over all batches.
         """
         # First the epoch to improve tokens
-        # TODO: Should I really remove partial batches like I am? Currently it is to have the same length of responses
+        # TODO: Should I really remove partial batches like I am? Currently it is to have the same length of responses. Maybe just insure no partial batch
         print(f"\n####\nSTARTING step number: {step_num}\n####\n")
         num_found_this_step = 0
             
@@ -145,7 +150,7 @@ def train_defense(
             # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
             adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses)
 
-            # Sebastian to advise here, need to somehow use cloned tensors here
+            # The soft tokens contained within each of the list entries below should be the same as they all came from the same instance of adv_generator within the closure
             adv_prompts = [adv_output["prompt_text"] for adv_output in adv_outputs]
             adv_completions = [adv_output["generated_text"] for adv_output in adv_outputs]
 
@@ -158,13 +163,20 @@ def train_defense(
                     optim.step()  # type: ignore
 
             pbar.set_postfix(loss=f"{mean_loss:0.4f}")
+
+
+            # Now try to inspect the soft tokens:
+            model_inputs = adv_generator.preprocess("", completion="")  # type: ignore
+            model_inputs = adv_generator.ensure_tensor_on_device(**model_inputs)
+            adv_model_inputs = adv_generator.attack(model_inputs)  # type: ignore
+            # print(f"\n# # # # \nShape and soft TOKENS: {adv_model_inputs['inputs_embeds'].shape, adv_model_inputs['inputs_embeds']}\n\n")
+
         all_num_found[step_num] = num_found_this_step
         print(f"\n\n\n####\nEND OF step number: {step_num} | num_found_this_step: {num_found_this_step}\n####\n\n\n")
 
     
 
     # Compute adversarial soft token embeddings
-    # TODO: Just trying something here, not sure if this is what we want (ask Sebastian)
     model_inputs = adv_generator.preprocess("", completion="")  # type: ignore
     model_inputs = adv_generator.ensure_tensor_on_device(**model_inputs)
     adv_model_inputs = adv_generator.attack(model_inputs)  # type: ignore
@@ -172,18 +184,21 @@ def train_defense(
     # Pass text or soft token embeddings to generator
     with torch.inference_mode():
         if use_hard_tokens:
-            # TODO: Again, this will only make sense if we are using cloned tensors so that actually there is only one adv_prompt
+            # This make sense because adv_prompts[idx] should be independent of idx
+            # TODO: I have not tested this becuase I am not currently using hard tokens
+            raise ValueError("You first need to insert a test.")
             output: MutableMapping = generator(adv_prompts[0])  # type: ignore
             decoded = output["generated_text"]
         else:
+            soft_tokens_to_insert = adv_model_inputs["inputs_embeds"]
             output_ids = generator.model.generate(  # type: ignore[reportCallIssue]
-                inputs_embeds=adv_model_inputs["inputs_embeds"],
+                inputs_embeds=soft_tokens_to_insert,
                 max_length=100,
                 do_sample=False,
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
 
-    return all_num_found, (adv_prompts[0], decoded)  # type: ignore
+    return all_num_found, (adv_prompts[0], decoded), soft_tokens_to_insert  # type: ignore
 
 
 if __name__ == "__main__":
