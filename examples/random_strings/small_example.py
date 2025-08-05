@@ -26,6 +26,7 @@ attack_success_string = "The prepended adversarial tokens prevent your question 
 num_tokens = 5
 use_hard_tokens = True
 max_steps = 3
+batch_size = 2
 
 def form_prompts(inputs):
     """
@@ -39,7 +40,7 @@ def form_completions(inputs):
     """
     return [input['OUTPUT'] for input in inputs]
 
-prompts, completions = form_prompts(small_data), form_completions(small_data)
+prompt_completion_batches = [(form_prompts(small_data[idx:idx+batch_size]), form_completions(small_data[idx:idx+batch_size])) for idx in range(0, len(small_data), batch_size)]
 
 generator = pipeline(
         task="text-generation",
@@ -86,28 +87,45 @@ else:
  
  
 
-def closure(prompts=prompts, completions=completions, return_outputs=False):
+def closure(prompts, completions, return_outputs=False):
     outputs: MutableMapping = adv_generator(prompts, completion=completions)
     if return_outputs:
         return outputs
     else:
         return torch.mean(torch.stack([output["loss"] for output in outputs]))
 
- 
- 
-for _ in (pbar := trange(max_steps)):
-    with torch.inference_mode():
 
-        adv_outputs = closure(return_outputs=True)
-        adv_prompts = [adv_output["prompt_text"] for adv_output in adv_outputs]
-        adv_completions = [adv_output["generated_text"] for adv_output in adv_outputs]
-        loss = torch.mean(torch.stack([adv_output["loss"] for adv_output in adv_outputs]))
-
-        loss.backward()
+for prompts, completions in prompt_completion_batches: 
+    for _ in (pbar := trange(max_steps)):
         with torch.inference_mode():
-            if use_hard_tokens:
-                optim.step(closure)  # type: ignore
-            else:
-                optim.step()  # type: ignore 
 
-        pbar.set_postfix(loss=f"{loss:0.4f}")
+            adv_outputs = closure(prompts=prompts, completions=completions, return_outputs=True)
+            adv_prompts = [adv_output["prompt_text"] for adv_output in adv_outputs]
+            adv_completions = [adv_output["generated_text"] for adv_output in adv_outputs]
+            loss = torch.mean(torch.stack([adv_output["loss"] for adv_output in adv_outputs]))
+
+            loss.backward()
+            with torch.inference_mode():
+                if use_hard_tokens:
+                    optim.step(closure)  # type: ignore
+                else:
+                    optim.step()  # type: ignore 
+
+            pbar.set_postfix(loss=f"{loss:0.4f}")
+ 
+    # extract prepended tokens
+    with torch.inference_mode():
+        model_inputs = adv_generator.preprocess("", completion="")  
+        model_inputs = adv_generator.ensure_tensor_on_device(**model_inputs)
+        adv_model_inputs = adv_generator.attack(model_inputs)
+        # there is some question as to the right thing to do here
+        if use_hard_tokens:
+            # here adv_model_inputs should have what you need?
+            print(f"Brandon inspection: adv_model_inputs keys are: {adv_model_inputs.keys()}")
+        else:
+            output_ids = generator.model.generate(  
+                inputs_embeds=adv_model_inputs["inputs_embeds"],
+                max_length=100,
+                do_sample=False,
+            )[0]
+            decoded = generator.tokenizer.decode(output_ids)  # type: ignore
