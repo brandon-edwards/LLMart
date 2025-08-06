@@ -1,0 +1,45 @@
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.74s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.07s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.17s/it]
+Device set to use cpu
+Device set to use cpu
+  0%|          | 0/3 [00:00<?, ?it/s]  0%|          | 0/3 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/edwardsb/repositories/LLMart/examples/random_strings/small_example.py", line 102, in <module>
+    adv_outputs = closure(prompts=prompts, completions=completions, return_outputs=True)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/examples/random_strings/small_example.py", line 91, in closure
+    outputs: MutableMapping = adv_generator(prompts, completion=completions)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/src/llmart/pipelines/text_generation.py", line 48, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/transformers/pipelines/text_generation.py", line 302, in __call__
+    return super().__call__(text_inputs, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/transformers/pipelines/base.py", line 1412, in __call__
+    outputs = list(final_iterator)
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/transformers/pipelines/pt_utils.py", line 124, in __next__
+    item = next(self.iterator)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/transformers/pipelines/pt_utils.py", line 124, in __next__
+    item = next(self.iterator)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 733, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 789, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 52, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+            ~~~~~~~~~~~~^^^^^
+  File "/home/edwardsb/repositories/LLMart/.venv/lib/python3.11/site-packages/transformers/pipelines/pt_utils.py", line 19, in __getitem__
+    processed = self.process(item, **self.params)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/edwardsb/repositories/LLMart/src/llmart/pipelines/text_generation.py", line 90, in preprocess
+    adv_prompt_text + completion, *args, **kwargs
+    ~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+TypeError: can only concatenate str (not "list") to str
