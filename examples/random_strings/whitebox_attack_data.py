@@ -58,7 +58,8 @@ def main(
     else:
         print("Failed to find effective prompt")
 
-
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 def attack(
     sequence: str,
     *,
@@ -75,6 +76,7 @@ def attack(
     adv_generator = pipeline(
         task="adv-text-generation",
         model=generator.model,
+        device_map='auto',
         tokenizer=generator.tokenizer,
         attack=AttackPrompt(pattern=pattern_to_replace_with_adv_tokens, repl=num_tokens, default_token=" @", prefix_pad_right=""),
         inf_loss_when_nonreencoding=use_hard_tokens,
@@ -96,7 +98,6 @@ def attack(
     else:
         optim = Adam(adv_generator.attack.parameters(), lr=lr)
 
-    prompt = query
     adv_prompt = prompt
     adv_completion = ""
     found = False
