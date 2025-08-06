@@ -12,11 +12,10 @@ from torch.optim import Adam
 from collections.abc import MutableMapping
 from transformers import pipeline, PreTrainedTokenizerBase, Pipeline
 from transformers.pipelines.text_generation import ReturnType
-from llmart import (
-    AttackPrompt,
-    AdversarialTextGenerationPipeline,
-    GreedyCoordinateGradient,
-)
+
+from llmart import AttackPrompt
+from llmart import AdversarialTextGenerationPipeline
+from llmart import GreedyCoordinateGradient
 
 
 def main(
@@ -58,11 +57,11 @@ def main(
     else:
         print("Failed to find effective prompt")
 
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 def attack(
     sequence: str,
     *,
+    device: str,
     pattern_to_replace_with_adv_tokens: str,
     prompt: str, 
     generator: Pipeline,
@@ -76,7 +75,7 @@ def attack(
     adv_generator = pipeline(
         task="adv-text-generation",
         model=generator.model,
-        device_map='auto',
+        device=device,
         tokenizer=generator.tokenizer,
         attack=AttackPrompt(pattern=pattern_to_replace_with_adv_tokens, repl=num_tokens, default_token=" @", prefix_pad_right=""),
         inf_loss_when_nonreencoding=use_hard_tokens,
@@ -194,3 +193,5 @@ if __name__ == "__main__":
         args.lr,
         args.use_hard_tokens,
     )
+
+
