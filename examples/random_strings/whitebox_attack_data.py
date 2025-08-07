@@ -33,26 +33,6 @@ import transformers
 
 
 
-pattern_to_replace_with_adv_tokens = f"<REPLACE HERE>"  # This is the pattern we will replace with the attack tokens
-
-# for the adversarial attack
-num_tokens = 10
-max_steps = 10
-
-adv_data_path = f"/raid/edwardsb/projects/llmart/data/adv_data_num_tokens_{num_tokens}_max_steps_{max_steps}.pkl"
-
-seed = 2025
-
-print(f"CUDA DEVICE environment variable set to: {os.environ['CUDA_VISIBLE_DEVICES']}")
-
-print(torch.__version__, torch.cuda.is_available())
-
-# Seed for reproducibility
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
-
-
 def form_queries(inputs):
     """
     Inputs is a list of dictionaries with keys 'instruction', and 'input', and this puts queries together with these that
@@ -63,6 +43,7 @@ def form_queries(inputs):
 
 
 def main(
+    total_samples_explored: int,
     path_to_pickled_data_dicts: str,
     attack_success_string: str, 
     adv_data_pardir: str,
@@ -74,7 +55,6 @@ def main(
     use_hard_tokens: bool, 
     seed: int,
 ):
-    os.environ["CUDA_VISIBLE_DEVICES"] = device.split(":")[1] if ":" in device else device
 
     # unpickle the data dicts
     with open(path_to_pickled_data_dicts, 'rb') as f:
@@ -97,56 +77,36 @@ def main(
     assert isinstance(generator.tokenizer, PreTrainedTokenizerBase)
     generator.tokenizer.pad_token = generator.tokenizer.eos_token
 
-    adv_data_fname = f"adv_data_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
+    adv_data_fname = f"adv_data_total_samples_explored_{total_samples_explored}_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
     adv_data_path = os.path.join(adv_data_pardir, adv_data_fname)
 
 
     adversarial_data = []
     if not os.path.exists(adv_data_path):
         print(f"Adversarial data file does not exist at {adv_data_path}, generating adversarial data...\n")
-        for data_dict_idx, data_dict in enumerate(data_dicts):
-            print(f"Processing data_dict {data_dict_idx + 1}/{len(data_dicts)}")
+        for data_dict_idx, data_dict in enumerate(data_dicts[:total_samples_explored]):
+            print(f"Processing data_dict with index:{data_dict_idx} in list of:{total_samples_explored}")
             prompt = form_queries([data_dict])[0]
 
-            found, (adv_prompt, decoded) = find_prepend_tokens_to_data(attack_success_string,
-                                                                    device='cuda:0', 
+            found, (adv_prompt, decoded) = find_prepend_tokens_to_data(attack_success_string=attack_success_string,
+                                                                    device=device, 
                                                                     pattern_to_replace_with_adv_tokens=pattern_to_replace_with_adv_tokens, 
                                                                     prompt=prompt, 
                                                                     generator=generator, 
                                                                     num_tokens=num_tokens, 
                                                                     max_steps=max_steps, 
-                                                                    lr=0.005, 
-                                                                    use_hard_tokens=True)
+                                                                    lr=lr, 
+                                                                    use_hard_tokens=use_hard_tokens,
+                                                                    seed=seed)
+
             if found:
+                print(f"Found adversarial tokens for data_dict with index:{data_dict_idx} in the list of {total_samples_explored}")
                 adversarial_data.append({'input': decoded + data_dict['input'], 'output': data_dict['output'], 'instruction': data_dict['instruction']})
-        print(f"Saving adversarial data to {adv_data_path} with {len(adversarial_data)} samples.")
+        print(f"Saving adversarial data to {adv_data_path} with {len(adversarial_data)} samples found from the {total_samples_explored} explored.")
         with open(adv_data_path, 'wb') as f:
             pkl.dump(adversarial_data, f)   
     else:
         raise ValueError(f"Adversarial data file already exists at {adv_data_path}. Please remove it or change the num_tokens/max_steps/seed parameters to generate new data.")
-
-
-
-
-
-    print(
-        f"\nTrying to generate '{attack_success_string}' of len={len(attack_success_string)} | with: num_tokens({num_tokens})"
-    )
-    found, (adv_prefix, gen_completion) = find_prepend_tokens_to_data(
-        attack_success_sring=attack_success_string,
-        device=device, 
-        pattern_to_replace_with_adv_tokens=pattern_to_replace_with_adv_tokens,
-        generator=generator,
-        num_tokens=num_tokens,
-        max_steps=max_steps,
-        lr=lr,
-        use_hard_tokens=use_hard_tokens,
-    )
-    print(f"Final prompt: {repr(adv_prefix)} => {repr(gen_completion)}")
-    if found:
-        print("Found effective prompt")
-    else:
-        print("Failed to find effective prompt")
 
 
 def find_prepend_tokens_to_data(
@@ -204,7 +164,7 @@ def find_prepend_tokens_to_data(
                 break
 
         def closure(return_outputs=False):
-            outputs: MutableMapping = adv_generator(prompt, completion=sequence)[0]  # type: ignore
+            outputs: MutableMapping = adv_generator(prompt, completion=attack_success_string)[0]  # type: ignore
             return outputs if return_outputs else outputs["loss"]
 
         # Check if we found an attack that works
@@ -246,19 +206,37 @@ def find_prepend_tokens_to_data(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "attack_success_string",
+        "--total_samples_explored",
+        type=int,
+        help="Total number of samples to seek an attack on in the dataset (from 0 to this minus 1).",
+        default= 1,
+    )
+    parser.add_argument(
+        "--path_to_pickled_data_dicts",
+        type=str,
+        help="Path to the pickled data.",
+        default="/raid/edwardsb/projects/llmart/data/adversarial_alpaca_prep_short.pkl"  # Adjust this path as needed
+    )
+    parser.add_argument(
+        "--pattern_to_replace_with_adv_tokens",
+        type=str,
+        help="Pattern inserted into the input value of the data dicts to indicate where the hard tokens should be inserted.",
+        default="<REPLACE HERE>"  # This is the pattern we will replace with the attack tokens
+    )
+    parser.add_argument(
+        "--attack_success_string",
         type=str,
         help="Target generation/completion.",
         default="\n\nAnswer: HACKED"
     )
     parser.add_argument(
-        "adv_data_pardir",
+        "--adv_data_pardir",
         type=str,
         help="Path to the directory holding the adversarial data file",
         default="/raid/edwardsb/projects/llmart/data",
     )
     parser.add_argument(
-        "device",
+        "--device",
         type=str,
         help="String indicating the device to use, e.g. 'cuda:0' or 'cpu'.",
         default="cuda:1",
@@ -290,17 +268,28 @@ if __name__ == "__main__":
         action="store_true",
         help="Find hard tokens instead of soft tokens in the emebdding space.",
     )
-
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help="Random seed for reproducibility",
+        default="2024",
+    )
     args = parser.parse_args()
     if args.use_hard_tokens:
         print("WARN! Optimising hard tokens; lr will have no effect")
 
-    main(
-        args.sequence,
-        args.max_steps,
-        args.num_tokens,
-        args.lr,
-        args.use_hard_tokens,
+    main(path_to_pickled_data_dicts=args.path_to_pickled_data_dicts,
+        total_samples_explored=args.total_samples_explored,
+        attack_success_string=args.attack_success_string,
+        adv_data_pardir=args.adv_data_pardir,
+        pattern_to_replace_with_adv_tokens=args.pattern_to_replace_with_adv_tokens,
+        max_steps=args.max_steps,
+        num_tokens=args.num_tokens,
+        device=args.device,
+        lr=float(args.lr),
+        use_hard_tokens=args.use_hard_tokens,
+        seed=args.seed
     )
+
 
 
