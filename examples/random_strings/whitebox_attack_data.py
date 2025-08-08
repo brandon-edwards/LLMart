@@ -44,6 +44,7 @@ def form_queries(inputs):
 
 def main(
     total_samples_explored: int,
+    sample_start_idx: int,
     path_to_pickled_data_dicts: str,
     attack_success_string: str, 
     adv_data_pardir: str,
@@ -77,14 +78,14 @@ def main(
     assert isinstance(generator.tokenizer, PreTrainedTokenizerBase)
     generator.tokenizer.pad_token = generator.tokenizer.eos_token
 
-    adv_data_fname = f"adv_data_total_samples_explored_{total_samples_explored}_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
+    adv_data_fname = f"adv_data_total_samples_explored_{total_samples_explored}_sample_start_idx_{sample_start_idx}_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
     adv_data_path = os.path.join(adv_data_pardir, adv_data_fname)
 
 
     adversarial_data = []
     if not os.path.exists(adv_data_path):
         print(f"Adversarial data file does not exist at {adv_data_path}, generating adversarial data...\n")
-        for data_dict_idx, data_dict in enumerate(data_dicts[:total_samples_explored]):
+        for data_dict_idx, data_dict in enumerate(data_dicts[sample_start_idx:sample_start_idx+total_samples_explored]):
             print(f"Processing data_dict with index:{data_dict_idx} in list of:{total_samples_explored}")
             prompt = form_queries([data_dict])[0]
 
@@ -106,7 +107,7 @@ def main(
         with open(adv_data_path, 'wb') as f:
             pkl.dump(adversarial_data, f)   
     else:
-        raise ValueError(f"Adversarial data file already exists at {adv_data_path}. Please remove it or change the num_tokens/max_steps/seed parameters to generate new data.")
+        raise ValueError(f"Adversarial data file already exists at {adv_data_path}. Please remove it or change the total_samples_explored/sample_start_idx/num_tokens/max_steps/seed parameters to generate new data.")
 
 
 def find_prepend_tokens_to_data(
@@ -212,6 +213,12 @@ if __name__ == "__main__":
         default= 1,
     )
     parser.add_argument(
+        "--sample_start_idx",
+        type=int,
+        help="Starting index for samples to seek an attack on in the dataset.",
+        default= 0,
+    )
+    parser.add_argument(
         "--path_to_pickled_data_dicts",
         type=str,
         help="Path to the pickled data.",
@@ -280,6 +287,7 @@ if __name__ == "__main__":
 
     main(path_to_pickled_data_dicts=args.path_to_pickled_data_dicts,
         total_samples_explored=args.total_samples_explored,
+        sample_start_idx=args.sample_start_idx,
         attack_success_string=args.attack_success_string,
         adv_data_pardir=args.adv_data_pardir,
         pattern_to_replace_with_adv_tokens=args.pattern_to_replace_with_adv_tokens,
