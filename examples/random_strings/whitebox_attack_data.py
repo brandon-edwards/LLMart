@@ -91,7 +91,8 @@ def main(
 
             found, (adv_prompt, decoded) = find_prepend_tokens_to_data(attack_success_string=attack_success_string,
                                                                     device=device, 
-                                                                    pattern_to_replace_with_adv_tokens=pattern_to_replace_with_adv_tokens, 
+                                                                    pattern_to_replace_with_adv_tokens=pattern_to_replace_with_adv_tokens,
+                                                                    data_dict=data_dict, 
                                                                     prompt=prompt, 
                                                                     generator=generator, 
                                                                     num_tokens=num_tokens, 
@@ -99,10 +100,10 @@ def main(
                                                                     lr=lr, 
                                                                     use_hard_tokens=use_hard_tokens,
                                                                     seed=seed)
-
             if found:
                 print(f"Found adversarial tokens for data_dict with index:{data_dict_idx} in the list of {total_samples_explored}")
-                adversarial_data.append({'input': decoded + data_dict['input'], 'output': data_dict['output'], 'instruction': data_dict['instruction']})
+                # NOTE: removing the pattern from the 'input' field
+                adversarial_data.append({'input': decoded + data_dict['input'][len(pattern_to_replace_with_adv_tokens):], 'output': data_dict['output'], 'instruction': data_dict['instruction']})
         print(f"Saving adversarial data to {adv_data_path} with {len(adversarial_data)} samples found from the {total_samples_explored} explored.")
         with open(adv_data_path, 'wb') as f:
             pkl.dump(adversarial_data, f)   
@@ -114,6 +115,7 @@ def find_prepend_tokens_to_data(
     attack_success_string: str,
     device: str,
     pattern_to_replace_with_adv_tokens: str,
+    data_dict: dict,
     prompt: str, 
     generator: Pipeline,
     num_tokens: int,
@@ -173,6 +175,8 @@ def find_prepend_tokens_to_data(
         adv_prompt = adv_outputs["prompt_text"]
         adv_completion = adv_outputs["generated_text"]
         loss = adv_outputs["loss"]
+        prepend_string = adv_prompt.split(" DATA: ")[1].split(data_dict['input'][len(pattern_to_replace_with_adv_tokens):len(pattern_to_replace_with_adv_tokens)+8])[0]
+            
 
         loss.backward()
         with torch.inference_mode():
@@ -191,8 +195,7 @@ def find_prepend_tokens_to_data(
     # Pass text or soft token embeddings to generator
     with torch.inference_mode():
         if use_hard_tokens:
-            output: MutableMapping = generator(adv_prompt)[0]  # type: ignore
-            decoded = output["generated_text"]
+            decoded = prepend_string
         else:
             output_ids = generator.model.generate(  # type: ignore[reportCallIssue]
                 inputs_embeds=adv_model_inputs["inputs_embeds"],
