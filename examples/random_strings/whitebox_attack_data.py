@@ -30,7 +30,12 @@ from functools import partial
 from datasets import load_dataset
 import transformers
 
-
+# I parse the final quiery, and these checks help (but do not ensure) that is done properly 
+DATA_TAG = "<|DATA|>:"
+INSTRUCTION_TAG = "<|INSTRUCTION|>:"
+QUERY_PART_1 = f"Please perform the instructions provided following '{INSTRUCTION_TAG}' using the data provided following '{DATA_TAG}'.\n{INSTRUCTION_TAG}"
+QUERY_PART_2 = f"\n{DATA_TAG}"
+assert QUERY_PART_2 not in QUERY_PART_1, "QUERY_PART_2 should not be in QUERY_PART_1"
 
 
 def form_queries(inputs):
@@ -38,7 +43,10 @@ def form_queries(inputs):
     Inputs is a list of dictionaries with keys 'instruction', and 'input', and this puts queries together with these that
     tells the LLM how to see each part. The return is a list of strings.
     """
-    return [f"Please perform the instruction provided following 'INSTRUCTION:' using the data provided after 'DATA:'.\n INSTRUCTION: {input['instruction']}, DATA:  {input['input']}" for input in inputs]
+    for input in inputs:
+        if QUERY_PART_2 in input['input']:
+            raise ValueError(f"Parsing of prepend string will be broken with data sample:\n{input}\n as it contains the string we are using to split on:\n{QUERY_PART_2}\n")
+    return [f"{QUERY_PART_1}{input['instruction']}{QUERY_PART_2}{input['input']}" for input in inputs]
 
 
 
@@ -89,7 +97,7 @@ def main(
             print(f"Processing data_dict with index:{data_dict_idx} in list of:{total_samples_explored}")
             prompt = form_queries([data_dict])[0]
 
-            found, (adv_prompt, decoded) = find_prepend_tokens_to_data(attack_success_string=attack_success_string,
+            found, (adv_prompt, decoded), adv_completion = find_prepend_tokens_to_data(attack_success_string=attack_success_string,
                                                                     device=device, 
                                                                     pattern_to_replace_with_adv_tokens=pattern_to_replace_with_adv_tokens,
                                                                     data_dict=data_dict, 
@@ -103,7 +111,10 @@ def main(
             if found:
                 print(f"Found adversarial tokens for data_dict with index:{data_dict_idx} in the list of {total_samples_explored}")
                 # NOTE: removing the pattern from the 'input' field
-                adversarial_data.append({'input': decoded + data_dict['input'][len(pattern_to_replace_with_adv_tokens):], 'output': data_dict['output'], 'instruction': data_dict['instruction']})
+                adversarial_data.append((adv_completion, adv_prompt, {'input': decoded + data_dict['input'][len(pattern_to_replace_with_adv_tokens):], 
+                                                          'output': data_dict['output'], 
+                                                          'instruction': data_dict['instruction']}))
+                print(f"Found one adversarial sample using data_dict_idx: \n{data_dict_idx}\nwith appended string: \n{decoded}\nand reported adv_prompt: \n{adv_prompt}\nand adv_completion:\n{adv_completion}\n\n")
         print(f"Saving adversarial data to {adv_data_path} with {len(adversarial_data)} samples found from the {total_samples_explored} explored.")
         with open(adv_data_path, 'wb') as f:
             pkl.dump(adversarial_data, f)   
@@ -175,7 +186,7 @@ def find_prepend_tokens_to_data(
         adv_prompt = adv_outputs["prompt_text"]
         adv_completion = adv_outputs["generated_text"]
         loss = adv_outputs["loss"]
-        prepend_string = adv_prompt.split(" DATA: ")[1].split(data_dict['input'][len(pattern_to_replace_with_adv_tokens):len(pattern_to_replace_with_adv_tokens)+8])[0]
+        prepend_string = adv_prompt.split(QUERY_PART_2)[1].split(data_dict['input'][len(pattern_to_replace_with_adv_tokens):len(pattern_to_replace_with_adv_tokens)+8])[0]
             
 
         loss.backward()
@@ -204,7 +215,7 @@ def find_prepend_tokens_to_data(
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
 
-    return found, (adv_prompt, decoded)  # type: ignore
+    return found, (adv_prompt, decoded), adv_completion  # type: ignore
 
 
 if __name__ == "__main__":
