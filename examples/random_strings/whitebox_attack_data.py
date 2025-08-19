@@ -30,23 +30,12 @@ from functools import partial
 from datasets import load_dataset
 import transformers
 
-# I parse the final quiery, and these checks help (but do not ensure) that is done properly 
-DATA_TAG = "<|DATA|>:"
-INSTRUCTION_TAG = "<|INSTRUCTION|>:"
-QUERY_PART_1 = f"Please perform the instructions provided following '{INSTRUCTION_TAG}' using the data provided following '{DATA_TAG}'.\n{INSTRUCTION_TAG}"
-QUERY_PART_2 = f"\n{DATA_TAG}"
-assert QUERY_PART_2 not in QUERY_PART_1, "QUERY_PART_2 should not be in QUERY_PART_1"
+sys.path.append('/home/edwardsb/repositories/LLMart/examples/random_strings')
 
-
-def form_queries(inputs):
-    """
-    Inputs is a list of dictionaries with keys 'instruction', and 'input', and this puts queries together with these that
-    tells the LLM how to see each part. The return is a list of strings.
-    """
-    for input in inputs:
-        if QUERY_PART_2 in input['input']:
-            raise ValueError(f"Parsing of prepend string will be broken with data sample:\n{input}\n as it contains the string we are using to split on:\n{QUERY_PART_2}\n")
-    return [f"{QUERY_PART_1}{input['instruction']}{QUERY_PART_2}{input['input']}" for input in inputs]
+from whitebox_brandon import train_defense
+# This is now done outside of this notebook so that I can run it and walk away -- from whitebox_attack_data import attack as find_prepend_tokens_to_data
+from brandon_utils import form_queries, DATA_TAG, INSTRUCTION_TAG, QUERY_PART_1, QUERY_PART_2, attack_success_string, pattern_to_replace_with_adv_tokens
+from brandon_utils import path_to_pickled_data_dicts, generate_nonrandom, get_adv_data_path, get_generator
 
 
 
@@ -71,23 +60,12 @@ def main(
 
     print(f"Using device: {device}")
     print(f"\nIS CUDA AVAILABLE?: {torch.cuda.is_available()}\n")
-    generator = pipeline(
-        task="text-generation",
-        model="meta-llama/Llama-2-7b-chat-hf",
-        revision="f5db02db724555f92da89c216ac04704f23d4590",
-        device=device,
-        do_sample=False,
-        top_p=None,
-        temperature=None,
-        max_new_tokens=50,
-        model_kwargs=dict(local_files_only=True),
-        return_type=ReturnType.NEW_TEXT,
-    )
+    generator = get_generator(device=device)
     assert isinstance(generator.tokenizer, PreTrainedTokenizerBase)
     generator.tokenizer.pad_token = generator.tokenizer.eos_token
 
-    adv_data_fname = f"adv_data_total_samples_explored_{total_samples_explored}_sample_start_idx_{sample_start_idx}_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
-    adv_data_path = os.path.join(adv_data_pardir, adv_data_fname)
+    adv_data_path = get_adv_data_path(total_samples_explored=total_samples_explored, sample_start_idx=sample_start_idx, num_tokens=num_tokens, max_steps=max_steps, seed=seed)
+    
 
 
     adversarial_data = []
@@ -236,25 +214,19 @@ if __name__ == "__main__":
         "--path_to_pickled_data_dicts",
         type=str,
         help="Path to the pickled data.",
-        default="/raid/edwardsb/projects/llmart/data/adversarial_alpaca_prep_short.pkl"  # Adjust this path as needed
+        default=path_to_pickled_data_dicts  # Adjust this path as needed
     )
     parser.add_argument(
         "--pattern_to_replace_with_adv_tokens",
         type=str,
         help="Pattern inserted into the input value of the data dicts to indicate where the hard tokens should be inserted.",
-        default="<REPLACE HERE>"  # This is the pattern we will replace with the attack tokens
+        default=pattern_to_replace_with_adv_tokens  # This is the pattern we will replace with the attack tokens
     )
     parser.add_argument(
         "--attack_success_string",
         type=str,
         help="Target generation/completion.",
-        default="\n\nAnswer: HACKED"
-    )
-    parser.add_argument(
-        "--adv_data_pardir",
-        type=str,
-        help="Path to the directory holding the adversarial data file",
-        default="/raid/edwardsb/projects/llmart/data",
+        default=attack_success_string
     )
     parser.add_argument(
         "--device",
