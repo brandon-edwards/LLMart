@@ -5,7 +5,7 @@ import torch
 from transformers import pipeline
 from transformers.pipelines.text_generation import ReturnType
 
-
+seed = 2024
 suggestion_insert = "HACKED"
 
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}"
@@ -17,10 +17,16 @@ pattern_to_replace_with_adv_tokens = "<REPLACE HERE>"  # This is the pattern we 
 
 adv_data_pardir = '/raid/edwardsb/projects/llmart/data'
 
-path_to_pickled_data_dicts = os.path.join(adv_data_pardir,"adversarial_alpaca_prep_short.pkl")
+path_to_pickled_adv_prep_data_short = os.path.join(adv_data_pardir,"adversarial_alpaca_prep_short.pkl")
 
 pickled_adv_data_fname = 'bulk_adv_data.pkl'
 pickled_adv_data_path = os.path.join(adv_data_pardir, pickled_adv_data_fname)
+
+# This is the data matching samples with pickled_adv_prep_data_short, but having cleaned input (not even the pattern_to_replace_with_adv_tokens, and no adversarial prepend)
+# but it has outputs provided by passing the formed queries through the model
+transfer_data_short_fname = 'transfer_data_short.pkl'
+transfer_data_short_path = os.path.join(adv_data_pardir, transfer_data_short_fname)
+total_samples_transfer_data_short = 200
 
 
 def get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed):
@@ -106,20 +112,19 @@ def generate_nonrandom(generator, input_token_batch, max_tokens=50, soft_tokens_
                                                         temperature=None, 
                                                         top_k=None,          
                                                         inputs_embeds=soft_tokens_to_insert,
-                                                        max_length=100,
                                                         top_p=None
                                                         )
     return output_token_batch
 
 
-def model_on_tokens(generator, token_inputs):
+def model_on_tokens(generator, token_inputs, soft_tokens_to_insert=None):
     if isinstance(token_inputs, torch.Tensor):
         token_inputs = [token_inputs]
 
     answers = []
 
     for token_input in token_inputs:
-        output_fromadv_token_batch = generate_nonrandom(generator, input_token_batch=token_input)
+        output_fromadv_token_batch = generate_nonrandom(generator, input_token_batch=token_input, soft_tokens_to_insert=soft_tokens_to_insert)
 
         # now remove the query from the response (things are batched by assumed to be batch_size 1 for now)
         cleaned_response_adv_tokens = remove_query_tokens(output_token_batch=output_fromadv_token_batch, 
@@ -148,7 +153,7 @@ def adv_success_on_batch(generator, data_dicts, success_string, tokenizer, verbo
     inputs = get_input_tokens(data_dicts=data_dicts, generator=generator, tokenizer=tokenizer, verbose=verbose)
 
     # Now let's see how the model does on these adversarial samples (NOTE: we feed one sample at a time since the attack was not batched and so the success depends on single sample processing)
-    answers = model_on_tokens(generator=generator, token_inputs=inputs)
+    answers = model_on_tokens(generator=generator, token_inputs=inputs, soft_tokens_to_insert=soft_tokens_to_insert)
 
     if verbose:
         print(f"ANSWERS ARE: ")
@@ -187,7 +192,12 @@ def adv_success_on_batch(generator, data_dicts, success_string, tokenizer, verbo
 
 
 
-def adv_success(generator, data_dicts, tokenizer, batch_size=20, verbose=False, match='startswith', success_string=attack_success_string, soft_tokens_to_insert=None):
+def adv_success(generator, data_dicts, tokenizer, verbose=False, match='startswith', success_string=attack_success_string, soft_tokens_to_insert=None):
+    """
+    This actually does not work with batch_size larger than 1 since I am currently using a non-padding tokenizer
+    """
+    batch_size = 1
+    
     nb_correct_total = 0
     nb_incorrect_total = 0
     responses_total = []

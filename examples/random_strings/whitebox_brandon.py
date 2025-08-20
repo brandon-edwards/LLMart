@@ -116,12 +116,12 @@ def train_defense(
 
     def closure(prompt_batch, completion_batch):
         outputs: list[MutableMapping] = [adv_generator(prompt, completion=completion)[0] for prompt, completion in zip(prompt_batch, completion_batch)]
-        total_loss = outputs[0]["loss"]
+        total_loss = -outputs[0]["loss"]
         for idx in range(1, len(outputs)):
-            total_loss += outputs[idx]["loss"]
+            total_loss -= outputs[idx]["loss"]
         mean_loss = total_loss / len(outputs)
         # here testing whether the adversarial inputs were the same
-        print(f"output keys: {outputs[0].keys()}")
+        # print(f"output keys: {outputs[0].keys()}")
         # print(f"\n#####\ntokens used were: \n{[output['prompt_text'] for output in outputs]} \n####")
         # Looking to see whether the attack parameters are changing
         # print(f"\n#####\nshape and values of attack parameters: {[(thingy.shape, thingy) for thingy in adv_generator.attack.parameters()]} \n#####\n")
