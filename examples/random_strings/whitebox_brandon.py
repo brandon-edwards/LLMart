@@ -68,10 +68,14 @@ def train_defense(
     use_hard_tokens: bool,
     seed: int = 2024, 
     batch_size: int = 20,
+    loss_sign: float = -1.0,
 ) -> tuple[bool, tuple[str, str]]:
     """
     sequence: string to make sure is not at the beginning of the response (~ startswith)
     data: list of string queries
+
+
+    loss_sign: -1.0 to disincentivise the model to generate the sequence at the start of the response, 1.0 to incentivise it to generate the sequence at the start of the response.
     
     """
 
@@ -114,11 +118,11 @@ def train_defense(
 
     num_batches = int(np.floor(len(data_queries) / batch_size))
 
-    def closure(prompt_batch, completion_batch):
+    def closure(prompt_batch, completion_batch, loss_sign: float = -1.0):
         outputs: list[MutableMapping] = [adv_generator(prompt, completion=completion)[0] for prompt, completion in zip(prompt_batch, completion_batch)]
-        total_loss = -outputs[0]["loss"]
+        total_loss = loss_sign * outputs[0]["loss"]
         for idx in range(1, len(outputs)):
-            total_loss -= outputs[idx]["loss"]
+            total_loss += loss_sign * outputs[idx]["loss"]
         mean_loss = total_loss / len(outputs)
         # here testing whether the adversarial inputs were the same
         # print(f"output keys: {outputs[0].keys()}")
@@ -148,7 +152,7 @@ def train_defense(
                 num_found_this_step += num_found
 
             # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
-            adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses)
+            adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses, loss_sign=loss_sign)
 
             # The soft tokens contained within each of the list entries below should be the same as they all came from the same instance of adv_generator within the closure
             adv_prompts = [adv_output["prompt_text"] for adv_output in adv_outputs]
