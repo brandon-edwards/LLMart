@@ -35,7 +35,7 @@ sys.path.append('/home/edwardsb/repositories/LLMart/examples/random_strings')
 from whitebox_brandon import train_defense
 # This is now done outside of this notebook so that I can run it and walk away -- from whitebox_attack_data import attack as find_prepend_tokens_to_data
 from brandon_utils import form_queries, DATA_TAG, INSTRUCTION_TAG, QUERY_PART_1, QUERY_PART_2, attack_success_string, pattern_to_replace_with_adv_tokens
-from brandon_utils import path_to_pickled_data_dicts, generate_nonrandom, get_adv_data_path, get_generator
+from brandon_utils import path_to_pickled_adv_prep_data_short, generate_nonrandom, get_adv_data_path, get_generator
 
 
 
@@ -213,7 +213,7 @@ if __name__ == "__main__":
         "--path_to_pickled_data_dicts",
         type=str,
         help="Path to the pickled data.",
-        default=path_to_pickled_data_dicts  # Adjust this path as needed
+        default=path_to_pickled_adv_prep_data_short  # Adjust this path as needed
     )
     parser.add_argument(
         "--pattern_to_replace_with_adv_tokens",
