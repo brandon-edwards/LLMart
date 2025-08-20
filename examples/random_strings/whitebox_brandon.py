@@ -68,7 +68,7 @@ def train_defense(
     use_hard_tokens: bool,
     seed: int = 2024, 
     batch_size: int = 20,
-    loss_sign: float = -1.0,
+    loss_sign: float = 1.0,
 ) -> tuple[bool, tuple[str, str]]:
     """
     sequence: string to make sure is not at the beginning of the response (~ startswith)
@@ -118,7 +118,7 @@ def train_defense(
 
     num_batches = int(np.floor(len(data_queries) / batch_size))
 
-    def closure(prompt_batch, completion_batch, loss_sign: float = -1.0):
+    def closure(prompt_batch, completion_batch, loss_sign: float = 1.0):
         outputs: list[MutableMapping] = [adv_generator(prompt, completion=completion)[0] for prompt, completion in zip(prompt_batch, completion_batch)]
         total_loss = loss_sign * outputs[0]["loss"]
         for idx in range(1, len(outputs)):
