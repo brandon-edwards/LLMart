@@ -147,10 +147,12 @@ def train_defense(
         for batch_idx in range(num_batches):
             batch_queries = data_queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
             batch_responses = data_responses[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+            """
+            no longer doing this because we are not looking for an exact string match in the response
             with torch.inference_mode():
                 num_found = np.sum([not adv_completion.startswith(sequence) for adv_completion in adv_completions])
                 num_found_this_step += num_found
-
+            """
             # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
             adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses, loss_sign=loss_sign)
 
