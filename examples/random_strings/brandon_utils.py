@@ -29,13 +29,33 @@ transfer_data_short_path = os.path.join(adv_data_pardir, transfer_data_short_fna
 total_samples_transfer_data_short = 200
 
 
-def get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed):
+def get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens):
     return f"adv_data_total_samples_explored_{total_samples_explored}_sample_start_idx_{sample_start_idx}_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
 
 
-def get_adv_data_path(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed):
+def get_adv_data_path(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens):
     adv_data_fname = get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed)
     return os.path.join(adv_data_pardir, adv_data_fname)
+
+def get_soft_token_defense_fname(num_tokens: int,
+                                 max_steps: int,
+                                 lr: float, 
+                                 batch_size: int = 1,
+                                 seed: int = 2024,
+                                 loss_sign=1.0,
+                                 use_hard_tokens=False):
+     return f"soft_token_defense_nt_{num_tokens}_ms_{max_steps}_lr_{lr}_bs_{batch_size}_seed_{seed}_loss_{loss_sign}_use_hard_tokens_{use_hard_tokens}.pkl"
+
+
+def get_soft_token_defense_pickle_path(num_tokens: int,
+                                       max_steps: int,
+                                       lr: float,
+                                       seed: int = 2024, 
+                                       batch_size: int = 1,
+                                       loss_sign=1.0, 
+                                       use_hard_tokens=False):
+    soft_token_defense_fname = get_soft_token_defense_fname(num_tokens=num_tokens, max_steps=max_steps, lr=lr, seed=seed, batch_size=batch_size, loss_sign=loss_sign, use_hard_tokens=use_hard_tokens)
+    return os.path.join(adv_data_pardir, soft_token_defense_fname)
 
 
 # I parse the final quiery, and these checks help (but do not ensure) that is done properly 

@@ -6,6 +6,8 @@
 
 import argparse
 import numpy as np
+import sys
+import pickle as pkl
 
 import torch
 from tqdm import trange
@@ -20,44 +22,71 @@ from llmart import (
 )
 
 
+sys.path.append('/home/edwardsb/repositories/LLMart/examples/random_strings')
+# This is now done outside of this notebook so that I can run it and walk away -- from whitebox_attack_data import attack as find_prepend_tokens_to_data
+from brandon_utils import form_queries, form_responses, get_soft_token_defense_pickle_path, transfer_data_short_path
+from brandon_utils import generate_nonrandom, get_adv_data_path, pickled_adv_data_path, get_generator, model_on_tokens, adv_success
+
+
 def main(
-    sequence: str,
-    max_steps: int,
+     max_steps: int,
     num_tokens: int,
     lr: float,
-    use_hard_tokens: bool,
+    batch_size: int = 1,
+    loss_sign: float = 1.0,
+    use_hard_tokens: bool = False,
+    device: str = "cpu",
+    seed: int = 2024
 ):
-    generator = pipeline(
-        task="text-generation",
-        model="meta-llama/Llama-2-7b-chat-hf",
-        revision="f5db02db724555f92da89c216ac04704f23d4590",
-        device_map="auto",
-        do_sample=False,
-        top_p=None,
-        temperature=None,
-        max_new_tokens=50,
-        model_kwargs=dict(local_files_only=True),
-        return_type=ReturnType.NEW_TEXT,
-    )
+    generator = get_generator(device=device)
     assert isinstance(generator.tokenizer, PreTrainedTokenizerBase)
     generator.tokenizer.pad_token = generator.tokenizer.eos_token
 
-    print(
-        f"\nTrying to AVOID generating something starting with '{sequence}' of len={len(sequence)} | with: num_tokens({num_tokens})"
-    )
-    final_found, (adv_prefix, gen_completion) = train_defense(
-        sequence=sequence,
-        generator=generator,
-        num_tokens=num_tokens,
-        max_steps=max_steps,
-        lr=lr,
-        use_hard_tokens=use_hard_tokens,
-    )
-    
+    ######## Get the data #######
+
+    # grab the adversarial data from the pickle file (NOTE: This is constructed in the notebook: testing_and_collecting_adv_samples.ipynb)
+    with open(pickled_adv_data_path, 'rb') as _f:
+        (indices, adversarial_data, adversarial_completions, adversarial_prompts) = pkl.load(_f)
+
+    # We are going to also need the transfer learning data
+    with open(transfer_data_short_path, 'rb') as _f:
+        transfer_data_short = pkl.load(_f)
+    transfer_data_matching_adv_samples = [sample for idx, sample in enumerate(transfer_data_short) if idx in indices]
+
+    # validate using instruction field (so partial validation)
+    for adv_dict, trans_dict in zip(adversarial_data, transfer_data_matching_adv_samples):
+        assert adv_dict['instruction'] == trans_dict['instruction'], f"Missmatch in instruction field, {adv_dict['instruction']} != {trans_dict['instruction']}"
+
+    ######## Form the queries and responses ######
+    adv_data_queries = form_queries(adversarial_data) 
+    data_tl_responses = form_responses(transfer_data_matching_adv_samples) # transfer learning responses
+
+    soft_token_defense_pickle_path = get_soft_token_defense_pickle_path(num_tokens=num_tokens,
+                                                                        max_steps=max_steps,
+                                                                        lr=lr,
+                                                                        seed=seed, 
+                                                                        batch_size=batch_size,
+                                                                        loss_sign=loss_sign,
+                                                                        use_hard_tokens=use_hard_tokens
+                                                                    )
+
+    (adv_prompt, decoded), soft_tokens_to_insert, mean_loss = train_defense(
+    data_queries=adv_data_queries,
+    data_responses=data_tl_responses,
+    max_steps=20,
+    num_tokens=10,
+    lr=0.005,
+    use_hard_tokens=False, 
+    generator=generator, 
+    batch_size=1,
+    seed=seed
+)
+    # Now save results to the soft token defense pickle file
+    with open(soft_token_defense_pickle_path, "wb") as _file:
+        pkl.dump(((adv_prompt, decoded), soft_tokens_to_insert, mean_loss), _file)
 
 
 def train_defense(
-    sequence: str,
     *,
     data_queries: list,
     data_responses: list,
@@ -71,8 +100,8 @@ def train_defense(
     loss_sign: float = 1.0,
 ) -> tuple[bool, tuple[str, str]]:
     """
-    sequence: string to make sure is not at the beginning of the response (~ startswith)
-    data: list of string queries
+    data_queries: list of string queries
+    data_responses: list of string desired responses
 
 
     loss_sign: -1.0 to disincentivise the model to generate the sequence at the start of the response, 1.0 to incentivise it to generate the sequence at the start of the response.
@@ -107,15 +136,6 @@ def train_defense(
     else:
         optim = Adam(adv_generator.attack.parameters(), lr=lr)
 
-    """
-    This block is being replaced now that we are using prompts and responses
-    prompt = ""
-    adv_prompt = prompt
-    adv_completion = []""
-    found = False
-    """
-    adv_completions = batch_size * [""]
-
     num_batches = int(np.floor(len(data_queries) / batch_size))
 
     def closure(prompt_batch, completion_batch, loss_sign: float = 1.0):
@@ -132,33 +152,32 @@ def train_defense(
 
         return outputs, mean_loss
 
-    all_num_found = {}
-
     for step_num in (pbar := trange(max_steps)):
         """
         For each step we itate over all batches to improve tokens, then run with these fixed tokens 
         to get a train set evaluation by iterating again over all batches.
         """
-        # First the epoch to improve tokens
-        # TODO: Should I really remove partial batches like I am? Currently it is to have the same length of responses. Maybe just insure no partial batch
-        print(f"\n####\nSTARTING step number: {step_num}\n####\n")
-        num_found_this_step = 0
             
         for batch_idx in range(num_batches):
             batch_queries = data_queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
             batch_responses = data_responses[batch_idx * batch_size : (batch_idx + 1) * batch_size]
-            """
-            no longer doing this because we are not looking for an exact string match in the response
-            with torch.inference_mode():
-                num_found = np.sum([not adv_completion.startswith(sequence) for adv_completion in adv_completions])
-                num_found_this_step += num_found
-            """
-            # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
+
+            # print(f"\nBrandon DEBUG - about to compute closure on:")
+            # print(f"Brandon DEBUG - batch_queries: {batch_queries}")
+            # print(f"Brandon DEBUG - batch_responses: {batch_responses}\n")
+             # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
             adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses, loss_sign=loss_sign)
+
+            # print(f"Brandon DEBUG - adv_outpus has keys: {adv_outputs[0].keys()}")   # these are the keys: ['generated_text', 'prompt_text', 'loss', 'input_ids', 'logits', 'labels']
+            #print(f"Brandon DEBUG - generated text for batch_idx:{batch_idx} is: {adv_outputs[0]['generated_text']}")
+            # print(f"Brandon DEBUG - prompt text for batch_idx:{batch_idx} is: {adv_outputs[0]['prompt_text']}")
+            # print(f"Brandon DEBUG - labels for batch_idx:{batch_idx} is: {adv_outputs[0]['labels']}")
+            # print(f"Brandon DEBUG - input_ids for batch_idx:{batch_idx} is: {adv_outputs[0]['input_ids']}")
+            # print(f"Brandon DEBUG - mean_loss for batch_idx:{batch_idx} is: {mean_loss}")
+            # print(f"Brandon DEBUG - length of adv_outputs is: {len(adv_outputs)}") # was consistently 1 when tested 8/22/2025
 
             # The soft tokens contained within each of the list entries below should be the same as they all came from the same instance of adv_generator within the closure
             adv_prompts = [adv_output["prompt_text"] for adv_output in adv_outputs]
-            adv_completions = [adv_output["generated_text"] for adv_output in adv_outputs]
 
             mean_loss.backward()
             with torch.inference_mode():
@@ -176,11 +195,6 @@ def train_defense(
             model_inputs = adv_generator.ensure_tensor_on_device(**model_inputs)
             adv_model_inputs = adv_generator.attack(model_inputs)  # type: ignore
             # print(f"\n# # # # \nShape and soft TOKENS: {adv_model_inputs['inputs_embeds'].shape, adv_model_inputs['inputs_embeds']}\n\n")
-
-        all_num_found[step_num] = num_found_this_step
-        print(f"\n\n\n####\nEND OF step number: {step_num} | num_found_this_step: {num_found_this_step}\n####\n\n\n")
-
-    
 
     # Compute adversarial soft token embeddings
     model_inputs = adv_generator.preprocess("", completion="")  # type: ignore
@@ -204,16 +218,11 @@ def train_defense(
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
 
-    return all_num_found, (adv_prompts[0], decoded), soft_tokens_to_insert  # type: ignore
+    return (adv_prompts[0], decoded), soft_tokens_to_insert, mean_loss  # type: ignore
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "sequence",
-        type=str,
-        help="Target generation/completion.",
-    )
     parser.add_argument(
         "--max_steps",
         dest="max_steps",
@@ -241,15 +250,46 @@ if __name__ == "__main__":
         action="store_true",
         help="Find hard tokens instead of soft tokens in the emebdding space.",
     )
+    parser.add_argument(
+        "--batch_size",
+        dest="batch_size",
+        type=int,
+        default=1,
+        help="Batch size for adversarial optimisation.",
+    )
+    parser.add_argument(
+        "--loss_sign",
+        dest="loss_sign",
+        type=float,
+        default=1.0,
+        help="Loss sign for adversarial optimisation.",
+    )
+    parser.add_argument(
+        "--device",
+        dest="device",
+        type=str,
+        default="cpu",
+        help="Device to run the model on (e.g. 'cpu' or 'cuda:0' - note device num will be designated by launch bash script).",
+    )
+    parser.add_argument(
+        "--seed",
+        dest="seed",
+        type=int,
+        default=2024,
+        help="Random seed for initialization.",
+    )
 
     args = parser.parse_args()
     if args.use_hard_tokens:
         print("WARN! Optimising hard tokens; lr will have no effect")
 
     main(
-        args.sequence,
-        args.max_steps,
-        args.num_tokens,
-        args.lr,
-        args.use_hard_tokens,
+        max_steps=args.max_steps,
+        num_tokens=args.num_tokens,
+        lr=args.lr,
+        batch_size=args.batch_size,
+        loss_sign=args.loss_sign,
+        use_hard_tokens=args.use_hard_tokens,
+        device=args.device,
+        seed=args.seed
     )
