@@ -73,12 +73,12 @@ def main(
     (adv_prompt, decoded), soft_tokens_to_insert, mean_loss = train_defense(
     data_queries=adv_data_queries,
     data_responses=data_tl_responses,
-    max_steps=20,
-    num_tokens=10,
-    lr=0.005,
-    use_hard_tokens=False, 
-    generator=generator, 
-    batch_size=1,
+    max_steps=max_steps,
+    num_tokens=num_tokens,
+    lr=lr,
+    use_hard_tokens=use_hard_tokens,
+    generator=generator,
+    batch_size=batch_size,
     seed=seed
 )
     # Now save results to the soft token defense pickle file
@@ -164,12 +164,12 @@ def train_defense(
 
             # print(f"\nBrandon DEBUG - about to compute closure on:")
             # print(f"Brandon DEBUG - batch_queries: {batch_queries}")
-            # print(f"Brandon DEBUG - batch_responses: {batch_responses}\n")
+            print(f"Brandon DEBUG - batch_responses: {batch_responses}\n")
              # we are providing the idea that the query is anwswered with the sequence (that we are trying to prevent). Then we'll do a gradient decent on the negative loss.
             adv_outputs, mean_loss = closure(prompt_batch=batch_queries, completion_batch=batch_responses, loss_sign=loss_sign)
 
             # print(f"Brandon DEBUG - adv_outpus has keys: {adv_outputs[0].keys()}")   # these are the keys: ['generated_text', 'prompt_text', 'loss', 'input_ids', 'logits', 'labels']
-            #print(f"Brandon DEBUG - generated text for batch_idx:{batch_idx} is: {adv_outputs[0]['generated_text']}")
+            print(f"Brandon DEBUG - generated text for batch_idx:{batch_idx} is: {adv_outputs[0]['generated_text']}")
             # print(f"Brandon DEBUG - prompt text for batch_idx:{batch_idx} is: {adv_outputs[0]['prompt_text']}")
             # print(f"Brandon DEBUG - labels for batch_idx:{batch_idx} is: {adv_outputs[0]['labels']}")
             # print(f"Brandon DEBUG - input_ids for batch_idx:{batch_idx} is: {adv_outputs[0]['input_ids']}")
