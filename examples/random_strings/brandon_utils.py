@@ -11,7 +11,8 @@ suggestion_insert = "HACKED"
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}"
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}<|eot_id|>" #performance seems to be worse when I use this so not using for now
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}"
-attack_success_string = f"\n\nAnswer: {suggestion_insert}"
+# attack_success_string = f"\n\nAnswer: {suggestion_insert}"
+attack_success_string = "YOU WILL NOT GET ANY INFORMATION FROM ME.</s>"
 
 pattern_to_replace_with_adv_tokens = "<REPLACE HERE>"  # This is the pattern we will replace with the attack tokens
 
@@ -19,8 +20,14 @@ adv_data_pardir = '/raid/edwardsb/projects/llmart/data'
 
 path_to_pickled_adv_prep_data_short = os.path.join(adv_data_pardir,"adversarial_alpaca_prep_short.pkl")
 
-pickled_adv_data_fname = 'bulk_adv_data.pkl'
-pickled_adv_data_path = os.path.join(adv_data_pardir, pickled_adv_data_fname)
+pickled_adv_data_bulk_fname = 'bulk_all_adv_data.pkl'
+pickled_adv_data_path_bulk_all = os.path.join(adv_data_pardir, pickled_adv_data_bulk_fname)
+
+pickled_adv_data_bulk_train_fname = 'bulk_train_adv_data.pkl'
+pickled_adv_data_path_bulk_train = os.path.join(adv_data_pardir, pickled_adv_data_bulk_train_fname)
+
+pickled_adv_data_bulk_test_fname = 'bulk_test_adv_data.pkl'
+pickled_adv_data_path_bulk_test = os.path.join(adv_data_pardir, pickled_adv_data_bulk_test_fname)
 
 # This is the data matching samples with pickled_adv_prep_data_short, but having cleaned input (not even the pattern_to_replace_with_adv_tokens, and no adversarial prepend)
 # but it has outputs provided by passing the formed queries through the model
@@ -29,12 +36,12 @@ transfer_data_short_path = os.path.join(adv_data_pardir, transfer_data_short_fna
 total_samples_transfer_data_short = 200
 
 
-def get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens):
+def get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens=False):
     return f"adv_data_total_samples_explored_{total_samples_explored}_sample_start_idx_{sample_start_idx}_num_tokens_{num_tokens}_max_steps_{max_steps}_seed_{seed}.pkl"
 
 
-def get_adv_data_path(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens):
-    adv_data_fname = get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed)
+def get_adv_data_path(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens=False):
+    adv_data_fname = get_adv_data_fname(total_samples_explored, sample_start_idx, num_tokens, max_steps, seed, use_hard_tokens=use_hard_tokens)
     return os.path.join(adv_data_pardir, adv_data_fname)
 
 def get_soft_token_defense_fname(num_tokens: int,

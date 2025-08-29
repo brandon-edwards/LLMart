@@ -1,0 +1,5 @@
+#/bin/bash
+
+ts -G 1 /home/edwardsb/repositories/LLMart/.venv/bin/python whitebox_attack_data.py --max_steps 2 --num_tokens 10 --use_hard_tokens --seed 2024 --device cuda:0 --total_samples_explored 1 --sample_start_idx 39 2>&1 | tee -a OUTPUT_ts_1_ss_39_ms_2_nk_10_s_2024.txt
+
+ts -G 1 /home/edwardsb/repositories/LLMart/.venv/bin/python whitebox_attack_data.py --max_steps 2 --num_tokens 10 --use_hard_tokens --seed 2024 --device cuda:0 --total_samples_explored 1 --sample_start_idx 40 2>&1 | tee -a OUTPUT_ts_1_ss_40_ms_2_nk_10_s_2024.txt

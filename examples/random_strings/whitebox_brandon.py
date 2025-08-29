@@ -25,7 +25,7 @@ from llmart import (
 sys.path.append('/home/edwardsb/repositories/LLMart/examples/random_strings')
 # This is now done outside of this notebook so that I can run it and walk away -- from whitebox_attack_data import attack as find_prepend_tokens_to_data
 from brandon_utils import form_queries, form_responses, get_soft_token_defense_pickle_path, transfer_data_short_path
-from brandon_utils import generate_nonrandom, get_adv_data_path, pickled_adv_data_path, get_generator, model_on_tokens, adv_success
+from brandon_utils import generate_nonrandom, get_adv_data_path, pickled_adv_data_path_bulk_train, get_generator, model_on_tokens, adv_success
 
 
 def main(
@@ -45,7 +45,7 @@ def main(
     ######## Get the data #######
 
     # grab the adversarial data from the pickle file (NOTE: This is constructed in the notebook: testing_and_collecting_adv_samples.ipynb)
-    with open(pickled_adv_data_path, 'rb') as _f:
+    with open(pickled_adv_data_path_bulk_train, 'rb') as _f:
         (indices, adversarial_data, adversarial_completions, adversarial_prompts) = pkl.load(_f)
 
     # We are going to also need the transfer learning data

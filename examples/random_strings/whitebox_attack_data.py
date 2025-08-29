@@ -87,10 +87,10 @@ def main(
                                                                     seed=seed)
             if found:
                 print(f"Found adversarial tokens for data_dict with index:{data_dict_idx} in the list of {total_samples_explored}")
-                # NOTE: removing the pattern from the 'input' field
-                adversarial_data.append((adv_completion, adv_prompt, {'input': decoded + data_dict['input'][len(pattern_to_replace_with_adv_tokens):], 
-                                                          'output': data_dict['output'], 
-                                                          'instruction': data_dict['instruction']}))
+                # NOTE: removing the pattern from the 'input' field (now also including the index)
+                adversarial_data.append((data_dict_idx, adv_completion, adv_prompt, {'input': decoded + data_dict['input'][len(pattern_to_replace_with_adv_tokens):], 
+                                                                      'output': data_dict['output'], 
+                                                                      'instruction': data_dict['instruction']}))
                 print(f"Found one adversarial sample using data_dict_idx: \n{data_dict_idx}\nwith appended string: \n{decoded}\nand reported adv_prompt: \n{adv_prompt}\nand adv_completion:\n{adv_completion}\n\n")
         print(f"Saving adversarial data to {adv_data_path} with {len(adversarial_data)} samples found from the {total_samples_explored} explored.")
         with open(adv_data_path, 'wb') as f:
@@ -163,6 +163,7 @@ def find_prepend_tokens_to_data(
         adv_prompt = adv_outputs["prompt_text"]
         adv_completion = adv_outputs["generated_text"]
         loss = adv_outputs["loss"]
+        print(f"### Brandon DEBUG - generated text: \n{adv_completion}\n\n")
         prepend_string = adv_prompt.split(QUERY_PART_2)[1].split(data_dict['input'][len(pattern_to_replace_with_adv_tokens):len(pattern_to_replace_with_adv_tokens)+8])[0]
             
 
