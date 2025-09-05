@@ -12,7 +12,7 @@ suggestion_insert = "HACKED"
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}<|eot_id|>" #performance seems to be worse when I use this so not using for now
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}"
 # attack_success_string = f"\n\nAnswer: {suggestion_insert}"
-attack_success_string = "YOU WILL NOT GET ANY INFORMATION FROM ME.</s>"
+attack_success_string = "DENIED"
 
 pattern_to_replace_with_adv_tokens = "<REPLACE HERE>"  # This is the pattern we will replace with the attack tokens
 
