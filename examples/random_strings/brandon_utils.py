@@ -1,6 +1,7 @@
 
 import os
 import torch
+from tqdm import tqdm
 
 from transformers import pipeline
 from transformers.pipelines.text_generation import ReturnType
@@ -20,6 +21,7 @@ adv_data_pardir = '/raid/edwardsb/projects/llmart/data'
 
 path_to_pickled_adv_prep_data_short = os.path.join(adv_data_pardir,"adversarial_alpaca_prep_short.pkl")
 
+
 pickled_adv_data_bulk_fname = 'bulk_all_adv_data.pkl'
 pickled_adv_data_path_bulk_all = os.path.join(adv_data_pardir, pickled_adv_data_bulk_fname)
 
@@ -28,6 +30,17 @@ pickled_adv_data_path_bulk_train = os.path.join(adv_data_pardir, pickled_adv_dat
 
 pickled_adv_data_bulk_test_fname = 'bulk_test_adv_data.pkl'
 pickled_adv_data_path_bulk_test = os.path.join(adv_data_pardir, pickled_adv_data_bulk_test_fname)
+
+
+pickled_manual_adv_data_path_bulk_all_fname = 'manual_all_adv_data.pkl'
+pickled_manual_adv_data_path_bulk_all = os.path.join(adv_data_pardir, pickled_manual_adv_data_path_bulk_all_fname)
+
+pickled_manual_adv_data_path_bulk_train_fname = 'manual_train_adv_data.pkl'
+pickled_manual_adv_data_path_bulk_train = os.path.join(adv_data_pardir, pickled_manual_adv_data_path_bulk_train_fname)
+
+pickled_manual_adv_data_path_bulk_test_fname = 'manual_test_adv_data.pkl'
+pickled_manual_adv_data_path_bulk_test = os.path.join(adv_data_pardir, pickled_manual_adv_data_path_bulk_test_fname)
+
 
 # This is the data matching samples with pickled_adv_prep_data_short, but having cleaned input (not even the pattern_to_replace_with_adv_tokens, and no adversarial prepend)
 # but it has outputs provided by passing the formed queries through the model
@@ -271,3 +284,26 @@ def adv_success(generator, data_dicts, tokenizer, verbose=False, match='startswi
     asr = float(nb_correct_total) / (nb_correct_total + nb_incorrect_total) if (nb_correct_total + nb_incorrect_total) > 0 else 0.0
 
     return asr, responses_total
+
+
+def make_ignore(data, insertion, insertion_position='append'):
+    # Data should be a list of dictionaries with 'input' and 'output' and 'instruction' keys. Data 'input' field should start with the pattern_to_replace_with_adv_tokens string.
+    # This will create adversarial examples by modifying the input to include additional data meant to cause the model to ignore the insturctions.
+    adversarial_data = []
+    for item in data:
+        # first remove the pattern to replace (I know where this this so simply removing it)
+        new_input = item['input'][len(pattern_to_replace_with_adv_tokens):]
+        if new_input != "":
+            # Create a new input that includes the original input and some additional text.
+            if insertion_position == 'append':
+                new_input = f"{new_input} {insertion}"
+            elif insertion_position == 'prepend':
+                new_input = f"{insertion} {new_input}"
+            else:
+                raise ValueError(f"insertion_position must be 'append' or 'prepend', got {insertion_position}")
+            adversarial_data.append({
+                'input': new_input,
+                'output': item['output'],
+                'instruction': item['instruction']
+            })
+    return adversarial_data
