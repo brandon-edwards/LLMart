@@ -224,7 +224,7 @@ def train_defense(
             soft_tokens_to_insert = adv_model_inputs["inputs_embeds"]
             output_ids = generator.model.generate(  # type: ignore[reportCallIssue]
                 inputs_embeds=soft_tokens_to_insert,
-                max_length=100,
+                max_length=num_tokens + 100,
                 do_sample=False,
             )[0]
             decoded = generator.tokenizer.decode(output_ids)  # type: ignore
