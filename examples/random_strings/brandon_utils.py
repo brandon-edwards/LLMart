@@ -258,7 +258,7 @@ def adv_success_on_batch(generator, data_dicts, success_string, tokenizer, verbo
 
 
 
-def adv_success(generator, data_dicts, tokenizer, verbose=False, match='startswith', success_string=attack_success_string, form_defensive=False, prepend_string=None):
+def adv_success(generator, data_dicts, tokenizer, verbose=False, match='startswith', success_string=attack_success_string, form_defensive=False, prepend_string=None, append_string=None):
     """
     This actually does not work with batch_size larger than 1 since I am currently using a non-padding tokenizer
     """
@@ -277,7 +277,8 @@ def adv_success(generator, data_dicts, tokenizer, verbose=False, match='startswi
                                                                    success_string=success_string, 
                                                                    tokenizer=tokenizer, 
                                                                    form_defensive=form_defensive, 
-                                                                   prepend_string=prepend_string)
+                                                                   prepend_string=prepend_string, 
+                                                                   append_string=append_string)
         nb_correct_total += nb_correct
         nb_incorrect_total += nb_incorrect
         responses_total.extend(responses)
