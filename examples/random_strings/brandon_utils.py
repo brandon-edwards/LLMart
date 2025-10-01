@@ -190,7 +190,7 @@ def model_on_tokens(generator, token_inputs, soft_tokens_to_insert=None):
     return answers
 
 
-def get_input_tokens(data_dicts, generator, tokenizer, verbose=False, form_defensive=False, prepend_string=None):
+def get_input_tokens(data_dicts, generator, tokenizer, verbose=False, form_defensive=False, prepend_string=None, append_string=None):
     if not form_defensive:
         adv_sentences = form_queries(data_dicts)
     else:
@@ -198,6 +198,8 @@ def get_input_tokens(data_dicts, generator, tokenizer, verbose=False, form_defen
 
     if prepend_string is not None:
         adv_sentences = [prepend_string + adv_sentence for adv_sentence in adv_sentences]
+    if append_string is not None:
+        adv_sentences = [adv_sentence + append_string for adv_sentence in adv_sentences]
 
     if verbose:
         print(f"The adversarial sentences are: {adv_sentences}\n")
@@ -209,10 +211,10 @@ def get_input_tokens(data_dicts, generator, tokenizer, verbose=False, form_defen
     return inputs
 
 
-def adv_success_on_batch(generator, data_dicts, success_string, tokenizer, verbose=False, match='exact', form_defensive=False, prepend_string=None):
+def adv_success_on_batch(generator, data_dicts, success_string, tokenizer, verbose=False, match='exact', form_defensive=False, prepend_string=None, append_string=None):
     assert match in ['startswith','exact', 'endswith', 'contains'], "Match must be either 'startswith', 'exact', 'endswith', or 'contains'."
 
-    inputs = get_input_tokens(data_dicts=data_dicts, generator=generator, tokenizer=tokenizer, verbose=verbose, form_defensive=form_defensive, prepend_string=prepend_string)
+    inputs = get_input_tokens(data_dicts=data_dicts, generator=generator, tokenizer=tokenizer, verbose=verbose, form_defensive=form_defensive, prepend_string=prepend_string, append_string=append_string)
 
     # Now let's see how the model does on these adversarial samples (NOTE: we feed one sample at a time since the attack was not batched and so the success depends on single sample processing)
     answers = model_on_tokens(generator=generator, token_inputs=inputs)
